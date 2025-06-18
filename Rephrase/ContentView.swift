@@ -16,6 +16,9 @@ struct ContentView: View {
     @State private var isShowingScanner = false
     @State private var didCopy: Bool = false
     
+    @State private var promptSuggestions: [String] = []
+    @State private var isFetchingSuggestions = false
+    
     let openAIService = OpenAIService()
     
     private var clipBoardHasText: Bool {
@@ -25,36 +28,57 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 16) {
-                Text("Smart Rephraser ✍️")
+                Text("Smart Rephraser")
                     .font(.largeTitle.bold())
                 
                 TextEditor(text: $inputText)
                     .frame(height: 150)
                     .padding()
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2)))
                     .focused($isTextEditorFocused)
                 
-                HStack {
-                    Button("Rephrase") {
-                        runAction(type: .rephrase)
-                    }
-                    .buttonStyle(.borderedProminent)
+                ScrollView(.horizontal, showsIndicators: false){
                     
-                    Button("Fix Grammar") {
-                        runAction(type: .fixGrammar)
+                    HStack {
+                        Button("Rephrase") {
+                            runAction(type: .rephrase)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        
+                        Button("Fix Grammar") {
+                            runAction(type: .fixGrammar)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Summarize") {
+                            runAction(type: .summarize)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Explain") {
+                            runAction(type: .exlplain)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Analogy") {
+                            runAction(type: .analogy)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Send to ChatGPT") {
+                            runAction(type: .chatgpt)
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
+                    .disabled(isLoading || inputText.isEmpty)
                     
-                    Button("Summarize") {
-                        runAction(type: .summarize)
-                    }
-                    .buttonStyle(.bordered)
                 }
-                .disabled(isLoading || inputText.isEmpty)
                 
                 if isLoading {
-                    ProgressView("Asking ChatGPT...")
-                } else {
+                    HStack(spacing: 10) {
+                        BouncingDots()
+                    }
+                } else if !outputText.isEmpty {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(outputText)
@@ -80,6 +104,28 @@ struct ContentView: View {
                     }
                     .frame(maxHeight: 300)
                 }
+                else if outputText.isEmpty{
+                    // Show AI-generated prompt suggestion buttons
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(promptSuggestions, id: \.self) { suggestion in
+                                Button(action: {
+                                    inputText = suggestion
+                                }) {
+                                    Text(suggestion)
+                                        .padding(.horizontal)
+                                        .padding(.vertical, 8)
+                                        .background(Color.gray.opacity(0))
+                                        .cornerRadius(8)
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 300)
+                    .onAppear {
+                        fetchPromptSuggestions()
+                    }
+                }
 
                 Spacer()
             }
@@ -89,17 +135,32 @@ struct ContentView: View {
                 Spacer()
                 withAnimation{
                     HStack{
+                        if (!inputText.isEmpty){
+                            Button(action: {
+                                inputText = ""
+                            }) {
+                                Image(systemName: "xmark")
+                                    .font(.title2)
+                                    .padding()
+                                    .background(Color(.systemBackground))
+                                    .foregroundStyle(.red)
+                                    .clipShape(Circle())
+                                    .shadow(radius: 6)
+                            }
+                        }
+                        
                         Spacer()
-//                        Button(action: {
-//                            isShowingScanner = true
-//                        }) {
-//                            Image(systemName: "doc.viewfinder")
-//                                .font(.title2)
-//                                .padding()
-//                                .background(Color(.systemBackground))
-//                                .clipShape(Circle())
-//                                .shadow(radius: 4)
-//                        }
+                        
+    //                        Button(action: {
+    //                            isShowingScanner = true
+    //                        }) {
+    //                            Image(systemName: "doc.viewfinder")
+    //                                .font(.title2)
+    //                                .padding()
+    //                                .background(Color(.systemBackground))
+    //                                .clipShape(Circle())
+    //                                .shadow(radius: 4)
+    //                        }
                         
                         Button(action: {
                             if let pasteText = UIPasteboard.general.string {
@@ -148,7 +209,10 @@ struct ContentView: View {
     enum ActionType {
         case rephrase,
              fixGrammar,
-             summarize
+             summarize,
+             exlplain,
+             analogy,
+             chatgpt
     }
 
     func runAction(type: ActionType) {
@@ -162,7 +226,13 @@ struct ContentView: View {
         case .fixGrammar:
             prompt = "Fix any grammar and punctuation mistakes in this sentence:\n\(inputText)"
         case .summarize:
-            prompt = "Summarize this sentence(straight to the point) in simple words and give analogy if necessary:\n\(inputText)"
+            prompt = "Summarize this sentence in simple words, make a bullet points:\n\(inputText)"
+        case .exlplain:
+            prompt = "Explain this sentence in simple words:\n\(inputText)"
+        case .analogy:
+            prompt = "Give this sentence an analogy:\n\(inputText)"
+        case .chatgpt:
+            prompt = "\(inputText)"
         }
 
         openAIService.sendPrompt(prompt) { result in
@@ -173,6 +243,51 @@ struct ContentView: View {
                     self.outputText = response
                 case .failure(let error):
                     self.outputText = "Error: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    /// Fetches 20 prompt suggestions from the AI.
+    private func fetchPromptSuggestions() {
+        guard !isFetchingSuggestions else { return }
+        isFetchingSuggestions = true
+        let suggestionPrompt = "Provide 20 concise prompt suggestions for asking ChatGPT. Give me straight in bullet points"
+        openAIService.sendPrompt(suggestionPrompt) { result in
+            DispatchQueue.main.async {
+                isFetchingSuggestions = false
+                switch result {
+                case .success(let response):
+                    // Split on newlines and trim
+                    promptSuggestions = response
+                        .split(separator: "\n")
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                case .failure:
+                    promptSuggestions = []
+                }
+            }
+        }
+    }
+}
+struct BouncingDots: View {
+    @State private var scale: [CGFloat] = [1, 1, 1]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3) { i in
+                Circle()
+                    .frame(width: 8, height: 8)
+                    .scaleEffect(scale[i])
+                    .animation(Animation
+                        .easeInOut(duration: 0.6)
+                        .repeatForever()
+                        .delay(Double(i) * 0.2), value: scale[i])
+            }
+        }
+        .onAppear {
+            for i in 0..<3 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.2) {
+                    scale[i] = 0.5
                 }
             }
         }
