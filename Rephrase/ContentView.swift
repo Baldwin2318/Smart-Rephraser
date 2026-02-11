@@ -16,6 +16,9 @@ struct ContentView: View {
     @State private var didCopy: Bool = false
     @State private var isFetchingSuggestions = false
     @State private var promptSuggestions: [String] = []
+    @State private var availableModels: [String] = []
+    @State private var isLoadingModels: Bool = false
+
     
     // Provider selection
     @State private var selectedProvider: AIProvider = .gemini
@@ -34,30 +37,30 @@ struct ContentView: View {
         case deepseek = "DeepSeek"
     }
 
-    // Models per provider
-    var availableModels: [String] {
-        switch selectedProvider {
-        case .openai:
-            return [
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4-turbo",
-                "gpt-4",
-                "gpt-3.5-turbo"
-            ]
-        case .gemini:
-            return [
-                "gemini-2.0-flash",
-                "gemini-2.5-flash",
-                "gemini-2.5-pro"
-            ]
-        case .deepseek:
-            return [
-                "deepseek-chat",
-                "deepseek-coder"
-            ]
-        }
-    }
+//    // Models per provider
+//    var availableModels: [String] {
+//        switch selectedProvider {
+//        case .openai:
+//            return [
+//                "gpt-4o",
+//                "gpt-4o-mini",
+//                "gpt-4-turbo",
+//                "gpt-4",
+//                "gpt-3.5-turbo"
+//            ]
+//        case .gemini:
+//            return [
+//                "gemini-2.0-flash",
+//                "gemini-2.5-flash",
+//                "gemini-2.5-pro"
+//            ]
+//        case .deepseek:
+//            return [
+//                "deepseek-chat",
+//                "deepseek-coder"
+//            ]
+//        }
+//    }
     
     private var clipBoardHasText: Bool { UIPasteboard.general.hasStrings }
 
@@ -237,6 +240,12 @@ struct ContentView: View {
         .onChange(of: selectedProvider) { _ in
             selectedModel = availableModels.first ?? ""
         }
+        .onAppear {
+            fetchModelsForProvider()
+        }
+        .onChange(of: selectedProvider) { _ in
+            fetchModelsForProvider()
+        }
     }
     
     enum ActionType {
@@ -246,6 +255,20 @@ struct ContentView: View {
              exlplain,
              analogy,
              chatgpt
+    }
+    
+    class ModelCache {
+        static let shared = ModelCache()
+        
+        private var cache: [AIProvider: [String]] = [:]
+        
+        func get(_ provider: AIProvider) -> [String]? {
+            return cache[provider]
+        }
+        
+        func set(_ provider: AIProvider, models: [String]) {
+            cache[provider] = models
+        }
     }
 
     func runAction(type: ActionType) {
@@ -311,4 +334,43 @@ struct ContentView: View {
             }
         }
     }
+    
+    private func fetchModelsForProvider() {
+        isLoadingModels = true
+        availableModels = []
+        
+        let completion: (Result<[String], Error>) -> Void = { result in
+            DispatchQueue.main.async {
+                isLoadingModels = false
+                switch result {
+                case .success(let models):
+                    availableModels = models
+                    selectedModel = models.first ?? ""
+                case .failure(let error):
+                    print("Failed to fetch models: \(error)")
+                    // Fallback to defaults
+                    availableModels = getDefaultModels()
+                    selectedModel = availableModels.first ?? ""
+                }
+            }
+        }
+        
+        switch selectedProvider {
+        case .openai:
+            ModelFetcher.fetchOpenAIModels(completion: completion)
+        case .gemini:
+            ModelFetcher.fetchGeminiModels(completion: completion)
+        case .deepseek:
+            ModelFetcher.fetchDeepSeekModels(completion: completion)
+        }
+    }
+    
+    private func getDefaultModels() -> [String] {
+        switch selectedProvider {
+        case .openai: return ["gpt-4o", "gpt-4o-mini"]
+        case .gemini: return ["gemini-2.0-flash", "gemini-2.5-flash"]
+        case .deepseek: return ["deepseek-chat"]
+        }
+    }
 }
+
