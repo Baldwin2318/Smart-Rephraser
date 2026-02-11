@@ -65,186 +65,201 @@ struct ContentView: View {
     private var clipBoardHasText: Bool { UIPasteboard.general.hasStrings }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 16) {
-                Text("MUX")
-                    .font(.largeTitle.bold())
-                
-                TextEditor(text: $inputText)
-                    .frame(height: 150)
-                    .padding()
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2)))
-                    .focused($isTextEditorFocused)
-                HStack {
-                    Picker("Provider", selection: $selectedProvider) {
-                        ForEach(AIProvider.allCases, id: \.self) { provider in
-                            Text(provider.rawValue).tag(provider)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                HStack {
-                    Picker("Model", selection: $selectedModel) {
-                        ForEach(availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                    }
-                    .pickerStyle(.menu)
+        NavigationStack {
+            ZStack {
+                VStack(spacing: 16) {
+//                    Text("MUX")
+//                        .font(.largeTitle.bold())
                     
-                    Spacer()
+                    HStack {
+                        Picker("Model", selection: $selectedModel) {
+                            ForEach(availableModels, id: \.self) { model in
+                                Text(formatModelName(model)).tag(model)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
                     
-                    Button("Send") { runAction(type: .chatgpt) }
+                    TextEditor(text: $inputText)
+                        .frame(height: 150)
+                        .padding()
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2)))
+                        .focused($isTextEditorFocused)
+                 
+                    HStack{
+                        ScrollView(.horizontal, showsIndicators: false){
+                            HStack {
+                                Button("Rephrase") { runAction(type: .rephrase) }.buttonStyle(.bordered)
+                                Button("Fix Grammar") { runAction(type: .fixGrammar) }.buttonStyle(.bordered)
+//                                Button("Summarize") { runAction(type: .summarize) }.buttonStyle(.bordered)
+//                                Button("Explain") { runAction(type: .exlplain) }.buttonStyle(.bordered)
+//                                Button("Analogy") { runAction(type: .analogy) }.buttonStyle(.bordered)
+                            }
+                            .disabled(isLoading || inputText.isEmpty)
+                        }
+                        Spacer()
+                        Button(action: { runAction(type: .chatgpt) }) {
+                            Image(systemName: "arrow.up")
+                        }
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoading || inputText.isEmpty)
-                }
-                ScrollView(.horizontal, showsIndicators: false){
-                    HStack {
-                        Button("Rephrase") { runAction(type: .rephrase) }.buttonStyle(.bordered)
-                        Button("Fix Grammar") { runAction(type: .fixGrammar) }.buttonStyle(.bordered)
-                        Button("Summarize") { runAction(type: .summarize) }.buttonStyle(.bordered)
-                        Button("Explain") { runAction(type: .exlplain) }.buttonStyle(.bordered)
-                        Button("Analogy") { runAction(type: .analogy) }.buttonStyle(.bordered)
                     }
-                    .disabled(isLoading || inputText.isEmpty)
                     
-                }
-                
-                if isLoading {
-                    HStack(spacing: 10) {
-                        BouncingDots()
-                    }
-                } else if !outputText.isEmpty {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(outputText)
-                                .padding()
-                                .padding(.top, 30)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color(.secondarySystemBackground))
-                                .cornerRadius(12)
-                                .overlay(alignment: .topTrailing) {
-                                    Button(action: {
-                                        UIPasteboard.general.string = outputText
-                                        didCopy = true
-                                    }) {
-                                        Label(didCopy ? "Copied!" : "Copy", systemImage: "doc.on.docs")
-                                            .padding(8)
-                                            //.background(Color(.systemBackground).opacity(0.8))
-                                            .clipShape(Capsule())
-                                    }
-                                    .padding(8)
-                                    .disabled(outputText.isEmpty || didCopy)
-                                }
+                    if isLoading {
+                        HStack(spacing: 10) {
+                            BouncingDots()
                         }
-                    }
-                    .frame(maxHeight: 300)
-                }
-                else if outputText.isEmpty{
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(promptSuggestions, id: \.self) { suggestion in
-                                Button(action: {
-                                    inputText = suggestion
-                                }) {
-                                    Text(suggestion)
-                                        .padding(.horizontal)
-                                        .padding(.vertical, 8)
-                                        .background(Color.gray.opacity(0))
-                                        .cornerRadius(8)
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 300)
-                    .onAppear {
-//                        fetchPromptSuggestions()
-                    }
-                }
-                Spacer()
-            }
-            .padding()
-            
-            VStack {
-                Spacer()
-                withAnimation{
-                    HStack{
-                        if (!inputText.isEmpty){
-                            Button(action: {
-                                inputText = ""
-                            }) {
-                                Image(systemName: "xmark")
-                                    .font(.title2)
+                    } else if !outputText.isEmpty {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(outputText)
                                     .padding()
-                                    .background(Color(.systemBackground))
-                                    .foregroundStyle(.red)
-                                    .clipShape(Circle())
-                                    .shadow(radius: 6)
+                                    .padding(.top, 30)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color(.secondarySystemBackground))
+                                    .cornerRadius(12)
+                                    .overlay(alignment: .topTrailing) {
+                                        Button(action: {
+                                            UIPasteboard.general.string = outputText
+                                            didCopy = true
+                                        }) {
+                                            Label(didCopy ? "Copied!" : "Copy", systemImage: "doc.on.docs")
+                                                .padding(8)
+                                            //.background(Color(.systemBackground).opacity(0.8))
+                                                .clipShape(Capsule())
+                                        }
+                                        .padding(8)
+                                        .disabled(outputText.isEmpty || didCopy)
+                                    }
                             }
                         }
-                        
-                        Spacer()
-                        
-    //                        Button(action: {
-    //                            isShowingScanner = true
-    //                        }) {
-    //                            Image(systemName: "doc.viewfinder")
-    //                                .font(.title2)
-    //                                .padding()
-    //                                .background(Color(.systemBackground))
-    //                                .clipShape(Circle())
-    //                                .shadow(radius: 4)
-    //                        }
-                        
-                        Button(action: {
-                            if let pasteText = UIPasteboard.general.string {
-                                inputText = pasteText
+                        .frame(maxHeight: 300)
+                    }
+                    else if outputText.isEmpty{
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                ForEach(promptSuggestions, id: \.self) { suggestion in
+                                    Button(action: {
+                                        inputText = suggestion
+                                    }) {
+                                        Text(suggestion)
+                                            .padding(.horizontal)
+                                            .padding(.vertical, 8)
+                                            .background(Color.gray.opacity(0))
+                                            .cornerRadius(8)
+                                    }
+                                }
                             }
-                        }) {
-                            Image(systemName: "doc.on.clipboard")
-                                .font(.title2)
-                                .padding()
-                                .background(Color(.systemBackground))
-                                .clipShape(Circle())
-                                .shadow(radius: 4)
                         }
-                        .disabled(!clipBoardHasText)
-                        
-                        
-                        if isTextEditorFocused {
+                        .frame(maxHeight: 300)
+                        .onAppear {
+                            //                        fetchPromptSuggestions()
+                        }
+                    }
+                    Spacer()
+                }
+                .padding()
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Picker("Provider", selection: $selectedProvider) {
+                            ForEach(AIProvider.allCases, id: \.self) { provider in
+                                Text(provider.rawValue).tag(provider)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink(destination: UsageView()) {
+                            Image(systemName: "chart.bar.fill")
+                        }
+                    }
+                }
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                
+                VStack {
+                    Spacer()
+                    withAnimation{
+                        HStack{
+                            if (!inputText.isEmpty){
+                                Button(action: {
+                                    inputText = ""
+                                }) {
+                                    Image(systemName: "xmark")
+                                        .font(.title2)
+                                        .padding()
+                                        .background(Color(.systemBackground))
+                                        .foregroundStyle(.red)
+                                        .clipShape(Circle())
+                                        .shadow(radius: 6)
+                                }
+                            }
+                            
+                            Spacer()
+                            
+                            //                        Button(action: {
+                            //                            isShowingScanner = true
+                            //                        }) {
+                            //                            Image(systemName: "doc.viewfinder")
+                            //                                .font(.title2)
+                            //                                .padding()
+                            //                                .background(Color(.systemBackground))
+                            //                                .clipShape(Circle())
+                            //                                .shadow(radius: 4)
+                            //                        }
+                            
                             Button(action: {
-                                isTextEditorFocused = false
+                                if let pasteText = UIPasteboard.general.string {
+                                    inputText = pasteText
+                                }
                             }) {
-                                Image(systemName: "keyboard.chevron.compact.down")
+                                Image(systemName: "doc.on.clipboard")
                                     .font(.title2)
                                     .padding()
                                     .background(Color(.systemBackground))
                                     .clipShape(Circle())
                                     .shadow(radius: 4)
                             }
+                            .disabled(!clipBoardHasText)
+                            
+                            
+                            if isTextEditorFocused {
+                                Button(action: {
+                                    isTextEditorFocused = false
+                                }) {
+                                    Image(systemName: "keyboard.chevron.compact.down")
+                                        .font(.title2)
+                                        .padding()
+                                        .background(Color(.systemBackground))
+                                        .clipShape(Circle())
+                                        .shadow(radius: 4)
+                                }
+                            }
                         }
+                        .padding()
                     }
-                    .padding()
+                    .animation(.easeInOut(duration: 0.5), value: isTextEditorFocused)
                 }
-                .animation(.easeInOut(duration: 0.5), value: isTextEditorFocused)
+                
             }
-            
-        }
-        .sheet(isPresented: $isShowingScanner) {
-            DocumentScannerView { scannedText in
-                self.inputText = scannedText
+            .sheet(isPresented: $isShowingScanner) {
+                DocumentScannerView { scannedText in
+                    self.inputText = scannedText
+                }
             }
-        }
-        .onChange(of: outputText) { _ in
-            didCopy = false
-        }
-        .onChange(of: selectedProvider) { _ in
-            selectedModel = availableModels.first ?? ""
-        }
-        .onAppear {
-            fetchModelsForProvider()
-        }
-        .onChange(of: selectedProvider) { _ in
-            fetchModelsForProvider()
+            .onChange(of: outputText) { _ in
+                didCopy = false
+            }
+            .onChange(of: selectedProvider) { _ in
+                selectedModel = availableModels.first ?? ""
+            }
+            .onAppear {
+                fetchModelsForProvider()
+            }
+            .onChange(of: selectedProvider) { _ in
+                fetchModelsForProvider()
+            }
         }
     }
     
@@ -371,6 +386,13 @@ struct ContentView: View {
         case .gemini: return ["gemini-2.0-flash", "gemini-2.5-flash"]
         case .deepseek: return ["deepseek-chat"]
         }
+    }
+    
+    private func formatModelName(_ model: String) -> String {
+        model.replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
     }
 }
 
