@@ -12,23 +12,59 @@ struct ContentView: View {
     @State private var inputText: String = ""
     @State private var outputText: String = ""
     @State private var isLoading: Bool = false
-    @FocusState private var isTextEditorFocused: Bool
     @State private var isShowingScanner = false
     @State private var didCopy: Bool = false
-    
-    @State private var promptSuggestions: [String] = []
     @State private var isFetchingSuggestions = false
+    @State private var promptSuggestions: [String] = []
     
+    // Provider selection
+    @State private var selectedProvider: AIProvider = .gemini
+    @State private var selectedModel: String = "gemini-2.0-flash"
+    
+    @FocusState private var isTextEditorFocused: Bool
+    
+    // All services
     let openAIService = OpenAIService()
+    let geminiService = GeminiService()
+    let deepSeekService = DeepSeekService()
     
-    private var clipBoardHasText: Bool {
-        UIPasteboard.general.hasStrings
+    enum AIProvider: String, CaseIterable {
+        case openai = "OpenAI"
+        case gemini = "Gemini"
+        case deepseek = "DeepSeek"
     }
+
+    // Models per provider
+    var availableModels: [String] {
+        switch selectedProvider {
+        case .openai:
+            return [
+                "gpt-4o",
+                "gpt-4o-mini",
+                "gpt-4-turbo",
+                "gpt-4",
+                "gpt-3.5-turbo"
+            ]
+        case .gemini:
+            return [
+                "gemini-2.0-flash",
+                "gemini-2.5-flash",
+                "gemini-2.5-pro"
+            ]
+        case .deepseek:
+            return [
+                "deepseek-chat",
+                "deepseek-coder"
+            ]
+        }
+    }
+    
+    private var clipBoardHasText: Bool { UIPasteboard.general.hasStrings }
 
     var body: some View {
         ZStack {
             VStack(spacing: 16) {
-                Text("Smart Rephraser")
+                Text("MUX")
                     .font(.largeTitle.bold())
                 
                 TextEditor(text: $inputText)
@@ -36,39 +72,35 @@ struct ContentView: View {
                     .padding()
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.gray.opacity(0.2)))
                     .focused($isTextEditorFocused)
-                
-                ScrollView(.horizontal, showsIndicators: false){
+                HStack {
+                    Picker("Provider", selection: $selectedProvider) {
+                        ForEach(AIProvider.allCases, id: \.self) { provider in
+                            Text(provider.rawValue).tag(provider)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                HStack {
+                    Picker("Model", selection: $selectedModel) {
+                        ForEach(availableModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .pickerStyle(.menu)
                     
-                    HStack {
-                        Button("Rephrase") {
-                            runAction(type: .rephrase)
-                        }
+                    Spacer()
+                    
+                    Button("Send") { runAction(type: .chatgpt) }
                         .buttonStyle(.borderedProminent)
-                        
-                        Button("Fix Grammar") {
-                            runAction(type: .fixGrammar)
-                        }
-                        .buttonStyle(.bordered)
-                        
-                        Button("Summarize") {
-                            runAction(type: .summarize)
-                        }
-                        .buttonStyle(.bordered)
-                        
-                        Button("Explain") {
-                            runAction(type: .exlplain)
-                        }
-                        .buttonStyle(.bordered)
-                        
-                        Button("Analogy") {
-                            runAction(type: .analogy)
-                        }
-                        .buttonStyle(.bordered)
-                        
-                        Button("Send to ChatGPT") {
-                            runAction(type: .chatgpt)
-                        }
-                        .buttonStyle(.bordered)
+                        .disabled(isLoading || inputText.isEmpty)
+                }
+                ScrollView(.horizontal, showsIndicators: false){
+                    HStack {
+                        Button("Rephrase") { runAction(type: .rephrase) }.buttonStyle(.bordered)
+                        Button("Fix Grammar") { runAction(type: .fixGrammar) }.buttonStyle(.bordered)
+                        Button("Summarize") { runAction(type: .summarize) }.buttonStyle(.bordered)
+                        Button("Explain") { runAction(type: .exlplain) }.buttonStyle(.bordered)
+                        Button("Analogy") { runAction(type: .analogy) }.buttonStyle(.bordered)
                     }
                     .disabled(isLoading || inputText.isEmpty)
                     
@@ -105,7 +137,6 @@ struct ContentView: View {
                     .frame(maxHeight: 300)
                 }
                 else if outputText.isEmpty{
-                    // Show AI-generated prompt suggestion buttons
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(promptSuggestions, id: \.self) { suggestion in
@@ -123,10 +154,9 @@ struct ContentView: View {
                     }
                     .frame(maxHeight: 300)
                     .onAppear {
-                        fetchPromptSuggestions()
+//                        fetchPromptSuggestions()
                     }
                 }
-
                 Spacer()
             }
             .padding()
@@ -204,6 +234,9 @@ struct ContentView: View {
         .onChange(of: outputText) { _ in
             didCopy = false
         }
+        .onChange(of: selectedProvider) { _ in
+            selectedModel = availableModels.first ?? ""
+        }
     }
     
     enum ActionType {
@@ -235,7 +268,7 @@ struct ContentView: View {
             prompt = "\(inputText)"
         }
 
-        openAIService.sendPrompt(prompt) { result in
+        let completion: (Result<String, Error>) -> Void = { result in
             DispatchQueue.main.async {
                 isLoading = false
                 switch result {
@@ -246,14 +279,24 @@ struct ContentView: View {
                 }
             }
         }
+        
+        // Call the appropriate service
+        switch selectedProvider {
+        case .openai:
+            openAIService.sendPrompt(prompt, model: selectedModel, completion: completion)
+        case .gemini:
+            geminiService.sendPrompt(prompt, model: selectedModel, completion: completion)
+        case .deepseek:
+            deepSeekService.sendPrompt(prompt, model: selectedModel, completion: completion)
+        }
     }
     
     /// Fetches 20 prompt suggestions from the AI.
     private func fetchPromptSuggestions() {
         guard !isFetchingSuggestions else { return }
         isFetchingSuggestions = true
-        let suggestionPrompt = "Provide 20 concise prompt suggestions for asking ChatGPT. Give me straight in bullet points"
-        openAIService.sendPrompt(suggestionPrompt) { result in
+        let suggestionPrompt = "Hello what can you do? answer in simple, basic, short and friendly way"
+        openAIService.sendPrompt(suggestionPrompt, model: selectedModel) { result in
             DispatchQueue.main.async {
                 isFetchingSuggestions = false
                 switch result {
@@ -264,30 +307,6 @@ struct ContentView: View {
                         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 case .failure:
                     promptSuggestions = []
-                }
-            }
-        }
-    }
-}
-struct BouncingDots: View {
-    @State private var scale: [CGFloat] = [1, 1, 1]
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3) { i in
-                Circle()
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(scale[i])
-                    .animation(Animation
-                        .easeInOut(duration: 0.6)
-                        .repeatForever()
-                        .delay(Double(i) * 0.2), value: scale[i])
-            }
-        }
-        .onAppear {
-            for i in 0..<3 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.2) {
-                    scale[i] = 0.5
                 }
             }
         }
